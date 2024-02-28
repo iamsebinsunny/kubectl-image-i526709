@@ -1,0 +1,68 @@
+name: Check kubectl Release
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *' # Run every day at midnight
+
+jobs:
+  check-kubectl-release:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+
+    - name: Set up kubectl
+      id: check_latest_version
+      run: |
+        KUBECTL_VERSION=$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)
+        echo "Latest kubectl version: $KUBECTL_VERSION"
+        echo "kubectl_version=$KUBECTL_VERSION" >> $GITHUB_OUTPUT
+
+    - name: Update file
+      run: |
+        KUBECTL_VERSION=${{ steps.check_latest_version.outputs.kubectl_version }}
+        cd .github/workflows
+        sed -i 's/\]/,v1.28.0\]/' docker_build.yaml
+
+
+    - name: Commit and push if it changed
+      run: |
+        KUBECTL_VERSION=${{ steps.check_latest_version.outputs.kubectl_version }}
+        git config --global user.email "iamsebinsunny@gmail"
+        git config --global user.name "Sebin"
+        git config --global user.password ${{ secrets.GIT_TOKEN }}
+        git checkout -b bump-$KUBECTL_VERSION
+        git add -A
+        git diff --quiet && git diff --staged --quiet || git commit -m "Update kubectl version to $KUBECTL_VERSION"
+        git push --set-upstream origin bump-$KUBECTL_VERSION
+        git push
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_OUTPUT: ${{ secrets.GITHUB_OUTPUT }}
+
+    # - name: Create PR
+    #   run: |
+    #     curl -X POST \
+    #       -H "Authorization: Bearer ${{ secrets.PAT_TOKEN }}" \
+    #       -H "Content-Type: application/json" \
+    #       -d '{
+    #         "title": "Automated PR",
+    #         "head": "test",
+    #         "base": "main"
+    #       }' \
+    #       https://api.github.com/repos/${{ github.repository }}/pulls
+
+    # - name: Auto-approve PR
+    #   run: |
+    #     PR_NUMBER=$(curl -s -X POST \
+    #       -H "Authorization: Bearer ${{ secrets.PAT_TOKEN }}" \
+    #       -H "Content-Type: application/json" \
+    #       -d '{"event": "APPROVE"}' \
+    #       https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.number }}/reviews | jq -r .pull_request.url)
+    #     curl -X POST \
+    #       -H "Authorization: Bearer ${{ secrets.PAT_TOKEN }}" \
+    #       -H "Content-Type: application/json" \
+    #       -d '{"event": "APPROVE"}' \
+    #       $PR_NUMBER/reviews
